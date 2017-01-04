@@ -1,0 +1,31 @@
+name:                koshu-regress-cmd
+version:             0.1.0.0
+synopsis:            Koshu regression test driver
+description:         
+license:             BSD3
+license-file:        LICENSE
+author:              SEINO Katsuhiro
+maintainer:
+copyright:           2017, SEINO Katsuhiro
+category:            Testing
+build-type:          Simple
+cabal-version:       >= 1.8
+
+extra-source-files:
+
+executable koshu-regress
+  main-is:
+        koshu-regress.hs
+  other-modules:
+        Koshucode.Stationery.Regress.Diff
+        Koshucode.Stationery.Regress.Main
+  build-depends:
+         base                       == 4.*
+       , bytestring                 == 0.*
+       , Diff                       == 0.*
+       , directory                  == 1.*
+       , filepath                   == 1.*
+       , koshucode-baala-overture   >= 0.195.0.0
+       , koshucode-baala-base       >= 0.195.0.0
+       , koshucode-baala-data-plus  >= 0.195.0.0
+
