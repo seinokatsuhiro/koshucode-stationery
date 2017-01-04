@@ -53,10 +53,9 @@ body file dir baseDir =
     do checkRegressFile file
        Dir.createDirectoryIfMissing True baseDir
        pats   <- readPatterns file
-       trees  <- K.dirTrees "." pats
-       let trees' = omitRegressDir dir trees
-       Dir.withCurrentDirectory baseDir $ createDirTrees trees'
-       let paths = createPath <$> (K.treePaths K.<++> trees')
+       trees  <- K.dirTrees [Path.takeFileName dir] "." pats
+       Dir.withCurrentDirectory baseDir $ createDirTrees trees
+       let paths = createPath <$> (K.treePaths K.<++> trees)
        regressTo baseDir K.<#!> paths
 
 readPatterns :: FilePath -> IO [K.SubtreePattern]
@@ -89,11 +88,6 @@ createDirTree (K.TreeL _) = return ()
 createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
        Dir.withCurrentDirectory y $ createDirTrees xs
-
-omitRegressDir :: FilePath -> K.Map [K.Subtree]
-omitRegressDir dir = filter isRegressDir where
-    isRegressDir (K.TreeB _ y _) | y == dir = False
-    isRegressDir _ = True
 
 regressTo :: FilePath -> FilePath -> IO ()
 regressTo dir path = regress dir path (dir Path.</> path)
