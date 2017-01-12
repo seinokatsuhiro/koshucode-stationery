@@ -80,10 +80,10 @@ checkRegressFile path =
 createPath :: ([String], String) -> FilePath
 createPath (ys, z) = Path.joinPath ys Path.</> z
 
-createDirTrees :: [K.Subtree] -> IO ()
+createDirTrees :: [K.Subtree String] -> IO ()
 createDirTrees = mapM_ createDirTree
 
-createDirTree :: K.Subtree -> IO ()
+createDirTree :: K.Subtree String -> IO ()
 createDirTree (K.TreeL _) = return ()
 createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
