@@ -54,7 +54,7 @@ body file dir baseDir =
        Dir.createDirectoryIfMissing True baseDir
        pats   <- readPatterns file
        trees  <- K.dirTrees [Path.takeFileName dir] "." pats
-       Dir.withCurrentDirectory baseDir $ createDirTrees trees
+       K.withCurrentDirectory baseDir $ createDirTrees trees
        let paths = createPath <$> (K.treePaths K.<++> trees)
        regressTo baseDir K.<#!> paths
 
@@ -87,7 +87,7 @@ createDirTree :: K.Subtree String -> IO ()
 createDirTree (K.TreeL _) = return ()
 createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
-       Dir.withCurrentDirectory y $ createDirTrees xs
+       K.withCurrentDirectory y $ createDirTrees xs
 
 regressTo :: FilePath -> FilePath -> IO ()
 regressTo dir path = regress dir path (dir Path.</> path)
