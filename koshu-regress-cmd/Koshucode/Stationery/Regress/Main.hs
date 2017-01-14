@@ -33,12 +33,14 @@ options :: [Z.Option]
 options =
   [ Z.help
   , Z.version
+  , Z.req [] ["prompt"] "TEXT"   "Change prompt to TEXT"
   ]
 
 data Para = Para
     { pError    :: [String]
     , pHelp     :: Bool
     , pVersion  :: Bool
+    , pPrompt   :: String
     , pFiles    :: [FilePath]
     } deriving (Show)
 
@@ -47,6 +49,7 @@ para = Para
        { pError    = []
        , pHelp     = False
        , pVersion  = False
+       , pPrompt   = ""
        , pFiles    = [] }
 
 parsePara :: IO Para
@@ -57,8 +60,10 @@ parsePara =
          Right (ps, fs)
              | flag "help"      -> para { pHelp     = True }
              | flag "version"   -> para { pVersion  = True }
-             | otherwise        -> para { pFiles    = fs }
+             | otherwise        -> para { pPrompt   = req "prompt" K.|?| ">> "
+                                        , pFiles    = fs }
              where flag = Z.getFlag ps
+                   req  = Z.getReqLast ps
 
 -- | Entry point of regression test driver.
 regressMain :: IO ()
@@ -69,20 +74,20 @@ dispatch Para { .. }
     | K.some pError  = Z.printHelp pError options
     | pHelp          = Z.printHelp usage options
     | pVersion       = putStrLn ver
-dispatch Para { pFiles = [file] }
+dispatch p@Para { pFiles = [file] }
     = let dir = file Path.-<.> "d"
-      in body file dir (dir Path.</> "base")
+      in body p file dir (dir Path.</> "base")
 dispatch _ = Z.printHelp usage options
 
-body :: FilePath -> FilePath -> FilePath -> IO ()
-body file dir baseDir =
+body :: Para -> FilePath -> FilePath -> FilePath -> IO ()
+body p file dir baseDir =
     do checkRegressFile file
        Dir.createDirectoryIfMissing True baseDir
        pats   <- readPatterns file
        trees  <- K.dirTrees [Path.takeFileName dir] "." pats
        K.withCurrentDirectory baseDir $ createDirTrees trees
        let paths = createPath <$> (K.treePaths K.<++> trees)
-       regressTo baseDir K.<#!> paths
+       regressTo p baseDir K.<#!> paths
 
 readPatterns :: FilePath -> IO [K.SubtreePattern]
 readPatterns file =
@@ -115,11 +120,11 @@ createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
        K.withCurrentDirectory y $ createDirTrees xs
 
-regressTo :: FilePath -> FilePath -> IO ()
-regressTo dir path = regress dir path (dir Path.</> path)
+regressTo :: Para -> FilePath -> FilePath -> IO ()
+regressTo p dir path = regress p dir path (dir Path.</> path)
 
-regress :: FilePath -> FilePath -> FilePath -> IO ()
-regress dir path path' = check where
+regress :: Para -> FilePath -> FilePath -> FilePath -> IO ()
+regress p dir path path' = check where
 
     check = do
       exist <- Dir.doesFileExist path'
@@ -185,7 +190,7 @@ regress dir path path' = check where
       --putStrLn   "  or 'b' to skip this file and switch to batch mode"
 
     command = do
-      s <- K.prompt
+      s <- K.promptWith $ pPrompt p
       case s of
         "s" -> K.putLn
         "a" -> K.putLn >> Z.putAbort
