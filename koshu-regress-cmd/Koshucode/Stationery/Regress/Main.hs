@@ -44,6 +44,12 @@ data Para = Para
     , pBatch    :: Bool
     , pPrompt   :: String
     , pFiles    :: [FilePath]
+
+    , pTotal    :: Int
+    , pNew      :: Int
+    , pOk       :: Int
+    , pDiff     :: Int
+    , pDiffs    :: [Int]
     } deriving (Show)
 
 para :: Para
@@ -53,7 +59,14 @@ para = Para
        , pVersion  = False
        , pBatch    = False
        , pPrompt   = ""
-       , pFiles    = [] }
+       , pFiles    = []
+
+       , pTotal    = 0
+       , pNew      = 0
+       , pOk       = 0
+       , pDiff     = 0
+       , pDiffs    = []
+       }
 
 parsePara :: IO Para
 parsePara =
@@ -74,7 +87,7 @@ regressMain :: IO ()
 regressMain = dispatch K.# parsePara
 
 dispatch :: Para -> IO ()
-dispatch Para { .. }
+dispatch Para {..}
     | K.some pError  = Z.printHelp pError options
     | pHelp          = Z.printHelp usage options
     | pVersion       = putStrLn ver
@@ -91,7 +104,28 @@ body p file dir baseDir =
        trees  <- K.dirTrees [Path.takeFileName dir] "." pats
        K.withCurrentDirectory baseDir $ createDirTrees trees
        let paths = createPath <$> (K.treePaths K.<++> trees)
-       regressTo p baseDir K.<#!> paths
+       p' <- K.foldM (regressTo baseDir) p paths
+       summary p'
+    where
+      summary Para {..} | pTotal == 0 = return ()
+      summary Para {..} = do
+        K.putLn
+        putStrLn "**"
+        putStrLn $ "**  Summary"
+        putCnt pNew   "**    NEW    = " ""
+        putCnt pOk    "**    OK     = " ""
+        putCnt pDiff  "**    DIFF   = " (diffList pDiffs)
+        putCnt pTotal "**    TOTAL  = " ""
+        putStrLn "**"
+
+      putCnt c label note = K.when (c > 0) $ putStrLn (label ++ show c ++ note)
+
+      diffList ds | null ds = ""
+      diffList ds = let ds'  = take 5 $ reverse ds
+                        list = unwords ((show . K.list1) <$> ds')
+                        etc | length ds > 5 = " etc"
+                            | otherwise     = ""
+                    in "  --  See " ++ list ++ etc
 
 readPatterns :: FilePath -> IO [K.SubtreePattern]
 readPatterns file =
@@ -124,25 +158,34 @@ createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
        K.withCurrentDirectory y $ createDirTrees xs
 
-regressTo :: Para -> FilePath -> FilePath -> IO ()
-regressTo p dir path = regress p dir path (dir Path.</> path)
+regressTo :: FilePath -> Para -> FilePath -> IO Para
+regressTo dir p@Para {..} path =
+    let p' = p { pTotal = pTotal + 1 }
+    in regress p' dir path (dir Path.</> path) where
 
-regress :: Para -> FilePath -> FilePath -> FilePath -> IO ()
-regress p dir path path' = check where
+regress :: Para -> FilePath -> FilePath -> FilePath -> IO Para
+regress p@Para {..} dir path path' = check where
 
     check = do
       exist <- Dir.doesFileExist path'
       case exist of
         False -> do putNew
                     Dir.copyFile path path'
+                    return $ p { pNew = pNew + 1 }
         True  -> do bz  <- readBz path
                     bz' <- readBz path'
                     case bz == bz' of
-                      True  -> putOK
-                      False -> comp bz bz'
+                      True  -> do putOK
+                                  return $ p { pOk = pOk + 1 }
+                      False -> do comp bz bz'
+                                  return $ p { pDiff  = pDiff + 1
+                                             , pDiffs = pTotal : pDiffs }
                          
-    putNew = putStrLn $ "NEW - " ++ path
-    putOK  = putStrLn $ "OK - " ++ path
+    putNew   = putX "NEW"
+    putOK    = putX "OK"
+    putDiff  = putX "DIFF"
+
+    putX label = putStrLn $ "[" ++ show pTotal ++ "] " ++ label ++ " - " ++ path
 
     -- ----------------------  compare
 
@@ -158,7 +201,7 @@ regress p dir path path' = check where
     -- ----------------------  binary
 
     diffBinary bz bz' = do
-      K.putLn >> diffFound >> K.putLn
+      K.putLn >> putDiff >> K.putLn
       putStrLn   "  Cannot display binary content."
       putStrLn $ "  Size of base file is " ++ size bz'
                       ++ " bytes, new is " ++ size bz ++ "."
@@ -172,18 +215,16 @@ regress p dir path path' = check where
     sameLine x y = snd x == snd y
 
     diffText wd ds = do
-      K.putLn >> diffFound >> hr
+      K.putLn >> putDiff >> hr
       Diff.printContextDiff wd ds
-      hr >> diffFound
+      hr >> putDiff
       helpCmd
 
     -- ----------------------  help and command
 
     hr = putStrLn $ replicate 70 '-'
 
-    diffFound = putStrLn $ "DIFF - " ++ path
-
-    helpCmd | pBatch p   = K.putLn
+    helpCmd | pBatch     = K.putLn
             | otherwise  = K.putLn >> help >> cmd
 
     help = do
@@ -193,7 +234,7 @@ regress p dir path path' = check where
       --putStrLn   "  or 'b' to skip this file and switch to batch mode"
 
     cmd = do
-      s <- K.promptWith $ pPrompt p
+      s <- K.promptWith pPrompt
       case s of
         "s" -> K.putLn
         "a" -> K.putLn >> Z.putAbort
