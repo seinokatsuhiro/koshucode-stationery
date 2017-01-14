@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wall #-}
 
 -- | Koshu regression test driver.
@@ -34,21 +35,44 @@ options =
   , Z.version
   ]
 
+data Para = Para
+    { pError    :: [String]
+    , pHelp     :: Bool
+    , pVersion  :: Bool
+    , pFiles    :: [FilePath]
+    } deriving (Show)
+
+para :: Para
+para = Para
+       { pError    = []
+       , pHelp     = False
+       , pVersion  = False
+       , pFiles    = [] }
+
+parsePara :: IO Para
+parsePara =
+    do args <- Z.parseCommand options
+       return $ case args of
+         Left errs -> para { pError = errs }
+         Right (ps, fs)
+             | flag "help"      -> para { pHelp     = True }
+             | flag "version"   -> para { pVersion  = True }
+             | otherwise        -> para { pFiles    = fs }
+             where flag = Z.getFlag ps
+
 -- | Entry point of regression test driver.
 regressMain :: IO ()
-regressMain =
-    do args <- Z.parseCommand options
-       case args of
-         Left errs -> Z.printHelp errs options
-         Right (ps, fs)
-             | flag "help"    -> Z.printHelp usage options
-             | flag "version" -> putStrLn ver
-             | otherwise
-                 -> case fs of
-                      [file] -> let dir = file Path.-<.> "d"
-                                in body file dir (dir Path.</> "base")
-                      _ -> Z.printHelp usage options
-             where flag = Z.getFlag ps
+regressMain = dispatch K.# parsePara
+
+dispatch :: Para -> IO ()
+dispatch Para { .. }
+    | K.some pError  = Z.printHelp pError options
+    | pHelp          = Z.printHelp usage options
+    | pVersion       = putStrLn ver
+dispatch Para { pFiles = [file] }
+    = let dir = file Path.-<.> "d"
+      in body file dir (dir Path.</> "base")
+dispatch _ = Z.printHelp usage options
 
 body :: FilePath -> FilePath -> FilePath -> IO ()
 body file dir baseDir =
