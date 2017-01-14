@@ -50,9 +50,6 @@ printContextDiff wd = mapM_ p where
 
     trunc  = K.truncateString 200
     zero   = K.padBeginWith '0' wd . show
-    ellip  = replicate wd cdot
+    ellip  = replicate wd '.'
     space  = replicate wd ' '
 
--- | Centered dot character (@'·'@).
-cdot :: Char
-cdot = '·'
