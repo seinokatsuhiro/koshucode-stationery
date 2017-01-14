@@ -35,16 +35,21 @@ options =
   , Z.version
   , Z.flag [] ["batch"]           "Batch mode"
   , Z.req  [] ["prompt"] "TEXT"   "Change prompt to TEXT"
+  , Z.req  [] ["target"] "DIR"    "Target directory"
   ]
 
 data Para = Para
     { pError    :: [String]
+
+    -- Command line parameter
     , pHelp     :: Bool
     , pVersion  :: Bool
     , pBatch    :: Bool
     , pPrompt   :: String
+    , pTarget   :: FilePath
     , pFiles    :: [FilePath]
 
+    -- Counter
     , pTotal    :: Int
     , pNew      :: Int
     , pOk       :: Int
@@ -59,6 +64,8 @@ para = Para
        , pVersion  = False
        , pBatch    = False
        , pPrompt   = ""
+       , pTarget   = ""
+
        , pFiles    = []
 
        , pTotal    = 0
@@ -78,6 +85,7 @@ parsePara =
              | flag "version"   -> para { pVersion  = True }
              | otherwise        -> para { pBatch    = flag "batch"
                                         , pPrompt   = req "prompt" K.|?| ">> "
+                                        , pTarget   = req "target" K.|?| "."
                                         , pFiles    = fs }
              where flag = Z.getFlag ps
                    req  = Z.getReqLast ps
@@ -97,35 +105,38 @@ dispatch p@Para { pFiles = [file] }
 dispatch _ = Z.printHelp usage options
 
 body :: Para -> FilePath -> FilePath -> FilePath -> IO ()
-body p file dir baseDir =
+body p@Para {..} file dir baseDir =
     do checkRegressFile file
        Dir.createDirectoryIfMissing True baseDir
        pats   <- readPatterns file
-       trees  <- K.dirTrees [Path.takeFileName dir] "." pats
+       trees  <- K.dirTrees [Path.takeFileName dir] pTarget pats
        K.withCurrentDirectory baseDir $ createDirTrees trees
        let paths = createPath <$> (K.treePaths K.<++> trees)
-       p' <- K.foldM (regressTo baseDir) p paths
+       p' <- K.foldM (regressTo pTarget baseDir) p paths
        summary p'
-    where
-      summary Para {..} | pTotal == 0 = return ()
-      summary Para {..} = do
-        K.putLn
-        putStrLn "**"
-        putStrLn $ "**  Summary"
-        putCnt pNew   "**    NEW    = " ""
-        putCnt pOk    "**    OK     = " ""
-        putCnt pDiff  "**    DIFF   = " (diffList pDiffs)
-        putCnt pTotal "**    TOTAL  = " ""
-        putStrLn "**"
 
-      putCnt c label note = K.when (c > 0) $ putStrLn (label ++ show c ++ note)
+summary :: Para -> IO ()
+summary Para {..} | pTotal == 0 = return ()
+summary Para {..} = message where
+    message = do
+      K.putLn
+      putStrLn "**"
+      putStrLn $ "**  Summary"
+      putCnt pNew   "**    NEW    = " ""
+      putCnt pOk    "**    OK     = " ""
+      putCnt pDiff  "**    DIFF   = " (diffs pDiffs)
+      putCnt pTotal "**    TOTAL  = " ""
+      putStrLn "**"
 
-      diffList ds | null ds = ""
-      diffList ds = let ds'  = take 5 $ reverse ds
-                        list = unwords ((show . K.list1) <$> ds')
-                        etc | length ds > 5 = " etc"
-                            | otherwise     = ""
-                    in "  --  See " ++ list ++ etc
+    putCnt c label note = K.when (c > 0) $ putStrLn (label ++ show c ++ note)
+
+    diffs ds | null ds = ""
+    diffs ds =
+        let ds'  = take 5 $ reverse ds
+            list = unwords ((show . K.list1) <$> ds')
+            etc | length ds > 5 = " etc"
+                | otherwise     = ""
+        in "  --  See " ++ list ++ etc
 
 readPatterns :: FilePath -> IO [K.SubtreePattern]
 readPatterns file =
@@ -158,10 +169,10 @@ createDirTree (K.TreeB _ y xs) =
     do Dir.createDirectoryIfMissing True y
        K.withCurrentDirectory y $ createDirTrees xs
 
-regressTo :: FilePath -> Para -> FilePath -> IO Para
-regressTo dir p@Para {..} path =
+regressTo :: FilePath -> FilePath -> Para -> FilePath -> IO Para
+regressTo targetDir baseDir p@Para {..} path =
     let p' = p { pTotal = pTotal + 1 }
-    in regress p' dir path (dir Path.</> path) where
+    in regress p' baseDir (targetDir Path.</> path) (baseDir Path.</> path) where
 
 regress :: Para -> FilePath -> FilePath -> FilePath -> IO Para
 regress p@Para {..} dir path path' = check where
