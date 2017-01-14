@@ -20,6 +20,7 @@ executable koshu-regress
         Koshucode.Stationery.Regress.Diff
         Koshucode.Stationery.Regress.DirTree
         Koshucode.Stationery.Regress.Main
+        Koshucode.Stationery.Regress.Para
   build-depends:
          base                       == 4.*
        , bytestring                 == 0.*
