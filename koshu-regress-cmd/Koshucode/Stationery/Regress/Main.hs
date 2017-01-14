@@ -7,15 +7,15 @@ module Koshucode.Stationery.Regress.Main
  ( regressMain
  ) where
 
-import qualified Data.Algorithm.Diff                 as Diff
-import qualified Data.ByteString.Lazy                as Bz
-import qualified System.Directory                    as Dir
-import qualified System.FilePath                     as Path
-import qualified Koshucode.Baala.System              as Z
-import qualified Koshucode.Baala.DataPlus            as K
-import qualified Koshucode.Baala.Base.Message        as Msg
-import qualified Koshucode.Stationery.Regress.Diff   as Diff
-import qualified Paths_koshu_regress_cmd             as Ver
+import qualified Data.Algorithm.Diff                   as Diff
+import qualified Data.ByteString.Lazy                  as Bz
+import qualified System.Directory                      as Dir
+import qualified System.FilePath                       as Path
+import qualified Koshucode.Baala.System                as Z
+import qualified Koshucode.Baala.DataPlus              as K
+import qualified Koshucode.Stationery.Regress.Diff     as Diff
+import qualified Koshucode.Stationery.Regress.DirTree  as Reg
+import qualified Paths_koshu_regress_cmd               as Ver
 
 ver :: String
 ver = "Koshu regression test driver " ++ Z.showVersion Ver.version
@@ -99,75 +99,18 @@ dispatch Para {..}
     | K.some pError  = Z.printHelp pError options
     | pHelp          = Z.printHelp usage options
     | pVersion       = putStrLn ver
-dispatch p@Para { pFiles = [file] }
-    = let dir = file Path.-<.> "d"
-      in body p file dir (dir Path.</> "base")
+dispatch p@Para { pFiles = [regFile] }
+    = let regDir = regFile Path.-<.> "d"
+      in body p regFile regDir (regDir Path.</> "base")
 dispatch _ = Z.printHelp usage options
 
 body :: Para -> FilePath -> FilePath -> FilePath -> IO ()
-body p@Para {..} file dir baseDir =
-    do checkRegressFile file
+body p@Para {..} regFile regDir baseDir =
+    do Reg.checkRegressFile regFile
        Dir.createDirectoryIfMissing True baseDir
-       pats   <- readPatterns file
-       trees  <- K.dirTrees [Path.takeFileName dir] pTarget pats
-       K.withCurrentDirectory baseDir $ createDirTrees trees
-       let paths = createPath <$> (K.treePaths K.<++> trees)
+       paths <- Reg.preparePaths pTarget regFile regDir baseDir
        p' <- K.foldM (regressTo pTarget baseDir) p paths
        summary p'
-
-summary :: Para -> IO ()
-summary Para {..} | pTotal == 0 = return ()
-summary Para {..} = message where
-    message = do
-      K.putLn
-      putStrLn "**"
-      putStrLn $ "**  Summary"
-      putCnt pNew   "**    NEW    = " ""
-      putCnt pOk    "**    OK     = " ""
-      putCnt pDiff  "**    DIFF   = " (diffs pDiffs)
-      putCnt pTotal "**    TOTAL  = " ""
-      putStrLn "**"
-
-    putCnt c label note = K.when (c > 0) $ putStrLn (label ++ show c ++ note)
-
-    diffs ds | null ds = ""
-    diffs ds =
-        let ds'  = take 5 $ reverse ds
-            list = unwords ((show . K.list1) <$> ds')
-            etc | length ds > 5 = " etc"
-                | otherwise     = ""
-        in "  --  See " ++ list ++ etc
-
-readPatterns :: FilePath -> IO [K.SubtreePattern]
-readPatterns file =
-    do ls  <- K.readSubtreeClauses file
-       ls2 <- K.abortLeft ls
-       ps  <- K.abortLeft (createPatterns K.<#> ls2)
-       return $ concat ps
-       
-createPatterns :: K.TokenClause -> K.Ab [K.SubtreePattern]
-createPatterns cl = 
-    do ts <- K.toTrees cl
-       K.decodeSubtreePattern ts
-
-checkRegressFile :: FilePath -> IO ()
-checkRegressFile path =
-    do exist <- Dir.doesFileExist path
-       case exist of
-         True   -> return ()
-         False  -> K.abortLeft $ Msg.adlib "No regress file"
-
-createPath :: ([String], String) -> FilePath
-createPath (ys, z) = Path.joinPath ys Path.</> z
-
-createDirTrees :: [K.Subtree String] -> IO ()
-createDirTrees = mapM_ createDirTree
-
-createDirTree :: K.Subtree String -> IO ()
-createDirTree (K.TreeL _) = return ()
-createDirTree (K.TreeB _ y xs) =
-    do Dir.createDirectoryIfMissing True y
-       K.withCurrentDirectory y $ createDirTrees xs
 
 regressTo :: FilePath -> FilePath -> Para -> FilePath -> IO Para
 regressTo targetDir baseDir p@Para {..} path =
@@ -263,3 +206,27 @@ qqString s = "\"" ++ s ++ "\""
 testTextFile :: K.Test K.Bz
 testTextFile = Bz.null . Bz.filter bin where
     bin c = K.isControlCode c && not (K.isFormatCode c)
+
+summary :: Para -> IO ()
+summary Para {..} | pTotal == 0 = return ()
+summary Para {..} = message where
+    message = do
+      K.putLn
+      putStrLn "**"
+      putStrLn $ "**  Summary"
+      putCnt pNew   "**    NEW    = " ""
+      putCnt pOk    "**    OK     = " ""
+      putCnt pDiff  "**    DIFF   = " (diffs pDiffs)
+      putCnt pTotal "**    TOTAL  = " ""
+      putStrLn "**"
+
+    putCnt c label note = K.when (c > 0) $ putStrLn (label ++ show c ++ note)
+
+    diffs ds | null ds = ""
+    diffs ds =
+        let ds'  = take 5 $ reverse ds
+            list = unwords ((show . K.list1) <$> ds')
+            etc | length ds > 5 = " etc"
+                | otherwise     = ""
+        in "  --  See " ++ list ++ etc
+

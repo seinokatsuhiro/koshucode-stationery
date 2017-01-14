@@ -18,6 +18,7 @@ executable koshu-regress
         koshu-regress.hs
   other-modules:
         Koshucode.Stationery.Regress.Diff
+        Koshucode.Stationery.Regress.DirTree
         Koshucode.Stationery.Regress.Main
   build-depends:
          base                       == 4.*
