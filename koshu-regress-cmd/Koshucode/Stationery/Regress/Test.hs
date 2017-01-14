@@ -35,9 +35,9 @@ regress p@Rg.Para {..} dir path path' = check where
                     case bz == bz' of
                       True  -> do putOK
                                   return $ p { Rg.pOk = pOk + 1 }
-                      False -> do comp bz bz'
-                                  return $ p { Rg.pDiff  = pDiff + 1
-                                             , Rg.pDiffs = pTotal : pDiffs }
+                      False -> do p' <- comp bz bz'
+                                  return $ p' { Rg.pDiff  = pDiff + 1
+                                              , Rg.pDiffs = pTotal : pDiffs }
                          
     putNew   = putX "NEW"
     putOK    = putX "OK"
@@ -82,22 +82,25 @@ regress p@Rg.Para {..} dir path path' = check where
 
     hr = putStrLn $ replicate 70 '-'
 
-    helpCmd | pBatch     = K.putLn
+    helpCmd | pBatch     = K.putLn >> return p
             | otherwise  = K.putLn >> help >> cmd
 
     help = do
       putStrLn   "Type 'a' to abort process"
       putStrLn $ "  or 'u' to update base file in " ++ qqString dir
       putStrLn   "  or 's' to skip this file"
-      --putStrLn   "  or 'b' to skip this file and switch to batch mode"
+      putStrLn   "  or 'b' to skip this file and switch to batch mode"
 
+    cmd :: IO Rg.Para
     cmd = do
       s <- K.promptWith pPrompt
+      K.putLn
       case s of
-        "s" -> K.putLn
-        "a" -> K.putLn >> Z.putAbort
-        "u" -> K.putLn >> Dir.copyFile path path'
-        _   -> K.putLn >> help >> cmd
+        "a" -> Z.putAbort >> return p
+        "u" -> Dir.copyFile path path' >> return p
+        "s" -> return p
+        "b" -> return $ p { Rg.pBatch = True }
+        _   -> help >> cmd >> return p
 
 readBz :: FilePath -> IO K.Bz
 readBz path = do
