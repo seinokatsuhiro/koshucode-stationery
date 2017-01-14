@@ -47,17 +47,18 @@ regressMain = dispatch K.# Rg.parsePara where
            putStrLn $ "**  Summary"
            putCnt pNew   "**    NEW    = " ""
            putCnt pOk    "**    OK     = " ""
-           putCnt pDiff  "**    DIFF   = " (diffs pDiffs)
+           putCnt pDiff  "**    DIFF   = " $ diffs pDiffs
            putCnt pTotal "**    TOTAL  = " ""
            putStrLn "**"
 
     putCnt c label note =
         K.when (c > 0) $ putStrLn (label ++ show c ++ note)
 
-    diffs ds | null ds = ""
-    diffs ds = let ds'  = take 5 $ reverse ds
-                   list = unwords ((show . K.list1) <$> ds')
-                   etc | length ds > 5 = " etc"
-                       | otherwise     = ""
-               in "  --  See " ++ list ++ etc
+    diffs ds = let text d = "[" ++ show d ++ "]"
+                   begin  = text <$> (take 3 $ reverse ds)
+                   end    = text <$> (reverse $ take 3 ds)
+                   whole  = text <$> reverse ds
+                   list | length ds > 7  = unwords (begin ++ ["..."] ++ end)
+                        | otherwise      = unwords whole
+               in "   -- See " ++ list
 
