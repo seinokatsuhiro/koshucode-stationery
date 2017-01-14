@@ -40,13 +40,15 @@ regressMain =
     do args <- Z.parseCommand options
        case args of
          Left errs -> Z.printHelp errs options
-         Right (ps, [file])
+         Right (ps, fs)
              | flag "help"    -> Z.printHelp usage options
              | flag "version" -> putStrLn ver
-             | otherwise      -> let dir = file Path.-<.> "d"
-                                 in body file dir (dir Path.</> "base")
+             | otherwise
+                 -> case fs of
+                      [file] -> let dir = file Path.-<.> "d"
+                                in body file dir (dir Path.</> "base")
+                      _ -> Z.printHelp usage options
              where flag = Z.getFlag ps
-         Right (_, _)         -> Z.printHelp usage options
 
 body :: FilePath -> FilePath -> FilePath -> IO ()
 body file dir baseDir =
@@ -98,33 +100,33 @@ regress dir path path' = check where
     check = do
       exist <- Dir.doesFileExist path'
       case exist of
-        False -> Dir.copyFile path path'
+        False -> do putNew
+                    Dir.copyFile path path'
         True  -> do bz  <- readBz path
                     bz' <- readBz path'
-                    comp bz bz'
+                    case bz == bz' of
+                      True  -> putOK
+                      False -> comp bz bz'
                          
+    putNew = putStrLn $ "NEW - " ++ path
+    putOK  = putStrLn $ "OK - " ++ path
+
     -- ----------------------  compare
 
     comp bz bz'
-        | testBinaryFile bz
-            = case bz == bz' of
-                True   -> putOK
-                False  -> diffBinary bz bz'
-        | otherwise
+        | testTextFile bz
             = let ls   = K.linesCrlfBzNumbered bz
                   ls'  = K.linesCrlfBzNumbered bz'
                   wd   = K.digitsLength 10 $ 100 + length ls
-              in case diff ls' ls of
-                   ds | ok ds      -> putOK
-                      | otherwise  -> diffText wd ds
-
-    putOK = putStrLn $ "OK - " ++ path
+              in diffText wd $ diff ls' ls
+        | otherwise
+            = diffBinary bz bz'
 
     -- ----------------------  binary
 
     diffBinary bz bz' = do
       K.putLn >> diffFound >> K.putLn
-      putStrLn   "  Cannot display non-textual content of the file."
+      putStrLn   "  Cannot display binary content."
       putStrLn $ "  Size of base file is " ++ size bz'
                       ++ " bytes, new is " ++ size bz ++ "."
       K.putLn
@@ -137,10 +139,6 @@ regress dir path path' = check where
 
     diff xs ys = Diff.diffContext 2 $ Diff.getGroupedDiffBy sameLine xs ys
     sameLine x y = snd x == snd y
-
-    ok []               = True
-    ok [Diff.Both _ _]  = True
-    ok _                = False
 
     diffText wd ds = do
       K.putLn >> diffFound >> hr
@@ -168,7 +166,7 @@ regress dir path path' = check where
         "s" -> K.putLn
         "a" -> K.putLn >> Z.putAbort
         "u" -> K.putLn >> Dir.copyFile path path'
-        _   -> command
+        _   -> K.putLn >> help >> command
 
 readBz :: FilePath -> IO K.Bz
 readBz path = do
@@ -178,9 +176,6 @@ readBz path = do
 qqString :: K.Map String
 qqString s = "\"" ++ s ++ "\""
 
-testBinaryFile :: K.Test K.Bz
-testBinaryFile = Bz.any (< K.integralSpace)
-                 . Bz.take 1024
-                 . Bz.takeWhile K.isAsciiCode
-                 . Bz.filter (not . K.isNewlineCode)
-
+testTextFile :: K.Test K.Bz
+testTextFile = Bz.null . Bz.filter bin where
+    bin c = K.isControlCode c && not (K.isFormatCode c)
