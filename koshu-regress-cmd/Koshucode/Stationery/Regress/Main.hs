@@ -33,13 +33,15 @@ options :: [Z.Option]
 options =
   [ Z.help
   , Z.version
-  , Z.req [] ["prompt"] "TEXT"   "Change prompt to TEXT"
+  , Z.flag [] ["batch"]           "Batch mode"
+  , Z.req  [] ["prompt"] "TEXT"   "Change prompt to TEXT"
   ]
 
 data Para = Para
     { pError    :: [String]
     , pHelp     :: Bool
     , pVersion  :: Bool
+    , pBatch    :: Bool
     , pPrompt   :: String
     , pFiles    :: [FilePath]
     } deriving (Show)
@@ -49,6 +51,7 @@ para = Para
        { pError    = []
        , pHelp     = False
        , pVersion  = False
+       , pBatch    = False
        , pPrompt   = ""
        , pFiles    = [] }
 
@@ -60,7 +63,8 @@ parsePara =
          Right (ps, fs)
              | flag "help"      -> para { pHelp     = True }
              | flag "version"   -> para { pVersion  = True }
-             | otherwise        -> para { pPrompt   = req "prompt" K.|?| ">> "
+             | otherwise        -> para { pBatch    = flag "batch"
+                                        , pPrompt   = req "prompt" K.|?| ">> "
                                         , pFiles    = fs }
              where flag = Z.getFlag ps
                    req  = Z.getReqLast ps
@@ -158,9 +162,7 @@ regress p dir path path' = check where
       putStrLn   "  Cannot display binary content."
       putStrLn $ "  Size of base file is " ++ size bz'
                       ++ " bytes, new is " ++ size bz ++ "."
-      K.putLn
-      help
-      command
+      helpCmd
 
     size = show . Bz.length
 
@@ -172,16 +174,17 @@ regress p dir path path' = check where
     diffText wd ds = do
       K.putLn >> diffFound >> hr
       Diff.printContextDiff wd ds
-      hr >> diffFound >> K.putLn
-      help
-      command
+      hr >> diffFound
+      helpCmd
 
     -- ----------------------  help and command
 
     hr = putStrLn $ replicate 70 '-'
 
-    diffFound = do
-      putStrLn $ "Differences found on " ++ qqString path
+    diffFound = putStrLn $ "DIFF - " ++ path
+
+    helpCmd | pBatch p   = K.putLn
+            | otherwise  = K.putLn >> help >> cmd
 
     help = do
       putStrLn   "Type 'a' to abort process"
@@ -189,13 +192,13 @@ regress p dir path path' = check where
       putStrLn   "  or 's' to skip this file"
       --putStrLn   "  or 'b' to skip this file and switch to batch mode"
 
-    command = do
+    cmd = do
       s <- K.promptWith $ pPrompt p
       case s of
         "s" -> K.putLn
         "a" -> K.putLn >> Z.putAbort
         "u" -> K.putLn >> Dir.copyFile path path'
-        _   -> K.putLn >> help >> command
+        _   -> K.putLn >> help >> cmd
 
 readBz :: FilePath -> IO K.Bz
 readBz path = do
